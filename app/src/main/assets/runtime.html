@@ -1,0 +1,87 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Script Runtime</title></head>
+<body>
+<script>
+(() => {
+  const callbacks = new Map();
+  let nextCallbackId = 1;
+  const register = fn => {
+    const id = nextCallbackId++;
+    callbacks.set(id, fn);
+    return id;
+  };
+
+  function encode(node) {
+    if (node == null || typeof node !== "object") {
+      return { type: "text", props: { text: String(node ?? "") }, events: {}, children: [] };
+    }
+    const props = {};
+    const events = {};
+    for (const [key, value] of Object.entries(node.props || {})) {
+      if (typeof value === "function") {
+        const eventName = key.startsWith("on")
+          ? key.slice(2, 3).toLowerCase() + key.slice(3)
+          : key;
+        events[eventName] = register(value);
+      } else if (key !== "children") {
+        props[key] = value;
+      }
+    }
+    return {
+      id: node.id || "",
+      type: node.type || "text",
+      props,
+      events,
+      children: (node.children || node.props?.children || []).map(encode)
+    };
+  }
+
+  const make = (type, props = {}) => ({ type, props, children: props.children || [] });
+  const UI = Object.freeze({
+    column: props => make("column", props),
+    row: props => make("row", props),
+    text: props => make("text", props),
+    button: props => make("button", props),
+    input: props => make("input", props),
+    card: props => make("card", props),
+    spacer: props => make("spacer", props)
+  });
+
+  const publish = tree => {
+    try { NativeHost.publishUi(JSON.stringify(encode(tree))); }
+    catch (error) { NativeHost.log("UI publish failed: " + error); }
+  };
+
+  window.__dispatchEvent = (id, payload) => {
+    const callback = callbacks.get(Number(id));
+    if (!callback) { NativeHost.log("Missing callback: " + id); return; }
+    try {
+      const result = callback(payload);
+      if (result && typeof result.then === "function") {
+        result.catch(error => NativeHost.log("Async callback error: " + error));
+      }
+    } catch (error) {
+      NativeHost.log("Callback error: " + (error.stack || error));
+    }
+  };
+
+  window.__loadScript = (source, version) => {
+    callbacks.clear();
+    nextCallbackId = 1;
+    try {
+      const execute = new Function("UI", "NativeHost", "render", source + "\n//# sourceURL=main.js");
+      execute(UI, NativeHost, publish);
+      NativeHost.onScriptLoaded(Number(version));
+    } catch (error) {
+      NativeHost.log("main.js v" + version + " failed: " + (error.stack || error));
+    }
+  };
+
+  window.onerror = (message, source, line, column, error) => {
+    NativeHost.log("JS error: " + (error?.stack || message) + " @" + line + ":" + column);
+  };
+})();
+</script>
+</body>
+</html>
