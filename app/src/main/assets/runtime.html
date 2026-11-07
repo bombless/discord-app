@@ -49,6 +49,8 @@
   });
 
   const publish = tree => {
+    callbacks.clear();
+    nextCallbackId = 1;
     try { NativeHost.publishUi(JSON.stringify(encode(tree))); }
     catch (error) { NativeHost.log("UI publish failed: " + error); }
   };
@@ -75,6 +77,17 @@
       NativeHost.onScriptLoaded(Number(version));
     } catch (error) {
       NativeHost.log("main.js v" + version + " failed: " + (error.stack || error));
+      NativeHost.publishUi(JSON.stringify({
+        type: "card",
+        props: {},
+        events: {},
+        children: [{
+          type: "text",
+          props: { text: "Script error in v" + version + ": " + String(error) },
+          events: {},
+          children: []
+        }]
+      }));
     }
   };
 
