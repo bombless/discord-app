@@ -85,7 +85,7 @@ class ScriptRuntime(
         }
     }
 
-    private inner class NativeHost {
+    inner class NativeHost {
         @JavascriptInterface
         fun publishUi(json: String) {
             try {
